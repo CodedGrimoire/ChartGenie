@@ -1,0 +1,16 @@
+{
+  "name": "chartgenie-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@huggingface/inference": "^4.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "node-cache": "^5.1.2",
+    "node-fetch": "^2.6.7"
+  }
+}
