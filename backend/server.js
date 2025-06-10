@@ -10,27 +10,7 @@ const cache = new NodeCache({ stdTTL: 3600 });
 app.use(cors());
 app.use(express.json());
 
-// Ollama configuration
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-
-// Available Ollama models
-const OLLAMA_MODELS = [
-  {
-    name: 'llama3-8b',
-    model: 'llama3:8b',
-    description: 'Llama 3 8B - Great for diagrams'
-  },
-  {
-    name: 'codellama-7b',
-    model: 'codellama:7b',
-    description: 'CodeLlama 7B - Code focused'
-  },
-  {
-    name: 'llama3-70b',
-    model: 'llama3:70b',
-    description: 'Llama 3 70B - Most capable (if you have it)'
-  }
-];
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // Output formats
 const OUTPUT_FORMATS = {
@@ -40,7 +20,6 @@ const OUTPUT_FORMATS = {
   PLANTUML: 'plantuml'
 };
 
-// Simple validation
 function validateInput(input, format = 'mermaid') {
   if (!input || typeof input !== 'string') return { valid: false, error: 'Invalid input' };
   if (input.length > 1000) return { valid: false, error: 'Input too long' };
@@ -50,180 +29,151 @@ function validateInput(input, format = 'mermaid') {
   return { valid: true };
 }
 
-// Simple prompt creation for Ollama
 function createDiagramPrompt(userInput, outputFormat = 'mermaid') {
-  return `Create a ${outputFormat} diagram for: ${userInput}
+  if (outputFormat === 'mermaid') {
+    return `Create a mermaid erDiagram for: ${userInput}
 
-Output only the diagram code. Start immediately with the diagram type (like "erDiagram" or "flowchart TD").
+Format:
+erDiagram
+    ENTITY1 {
+        int id PK
+        string name
+    }
+    ENTITY2 {
+        int id PK
+        int entity1_id FK
+    }
+    ENTITY1 ||--o{ ENTITY2 : has
 
-Diagram:`;
+Output only valid mermaid syntax:`;
+  }
+  
+  return `Create a ${outputFormat} diagram for: ${userInput}. Output only valid syntax.`;
 }
 
-// Function to call Ollama API
-async function callOllama(model, prompt) {
+// Call Groq API
+async function callGroq(prompt) {
+  if (!GROQ_API_KEY) {
+    throw new Error('No Groq API key configured');
+  }
+
   try {
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: model,
-        prompt: prompt,
-        stream: false,
-        options: {
-          temperature: 0.1,
-          top_p: 0.9,
-          max_tokens: 800
-        }
+        model: 'llama3-8b-8192',
+        messages: [
+          {
+            role: 'system',
+            content: 'You generate only diagram code. No explanations.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 800,
+        temperature: 0.1
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      const error = await response.text();
+      throw new Error(`Groq API error: ${response.status} - ${error}`);
     }
 
     const data = await response.json();
-    return data.response;
+    return data.choices[0]?.message?.content || '';
   } catch (error) {
-    throw new Error(`Failed to call Ollama: ${error.message}`);
+    throw new Error(`Failed to call Groq: ${error.message}`);
   }
 }
 
-// Check if Ollama is running
-async function checkOllamaHealth() {
-  try {
-    const response = await fetch(`${OLLAMA_URL}/api/tags`);
-    return response.ok;
-  } catch (error) {
-    return false;
+// Generate fallback diagram
+function generateFallbackDiagram(prompt) {
+  const lower = prompt.toLowerCase();
+  
+  if (lower.includes('hospital') || lower.includes('medical')) {
+    return `erDiagram
+    PATIENT {
+        int patient_id PK
+        string name
+        string email
+    }
+    DOCTOR {
+        int doctor_id PK
+        string name
+        string specialty
+    }
+    APPOINTMENT {
+        int appointment_id PK
+        int patient_id FK
+        int doctor_id FK
+        date appointment_date
+    }
+    PATIENT ||--o{ APPOINTMENT : books
+    DOCTOR ||--o{ APPOINTMENT : conducts`;
   }
-}
-
-// Get available models from Ollama
-async function getOllamaModels() {
-  try {
-    const response = await fetch(`${OLLAMA_URL}/api/tags`);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    return data.models || [];
-  } catch (error) {
-    return [];
-  }
+  
+  return `erDiagram
+    USER {
+        int id PK
+        string name
+        string email
+    }
+    ITEM {
+        int id PK
+        string title
+        int user_id FK
+    }
+    USER ||--o{ ITEM : owns`;
 }
 
 // Health check
-app.get('/api/ping', async (req, res) => {
+app.get('/api/ping', (req, res) => {
   console.log('✅ Ping endpoint hit');
-  
-  const ollamaHealthy = await checkOllamaHealth();
-  const availableModels = await getOllamaModels();
   
   res.json({ 
     message: 'ChartGenie Server is live!', 
     timestamp: new Date().toISOString(),
     supportedFormats: Object.values(OUTPUT_FORMATS),
-    ollamaUrl: OLLAMA_URL,
-    ollamaHealthy: ollamaHealthy,
-    mode: 'OLLAMA_LOCAL',
-    configuredModels: OLLAMA_MODELS.map(m => m.name),
-    availableModels: availableModels.map(m => m.name)
+    groqConfigured: !!GROQ_API_KEY,
+    mode: 'GROQ_FREE'
   });
 });
 
-// Test endpoint for Ollama models
-app.get('/api/test-ollama', async (req, res) => {
-  const ollamaHealthy = await checkOllamaHealth();
-  
-  if (!ollamaHealthy) {
+// Test Groq
+app.get('/api/test-groq', async (req, res) => {
+  if (!GROQ_API_KEY) {
     return res.status(500).json({ 
-      error: 'Ollama not available',
-      message: 'Make sure Ollama is running: ollama serve',
-      ollamaUrl: OLLAMA_URL
-    });
-  }
-
-  console.log('🧪 Testing Ollama Models...');
-  const results = {};
-  const availableModels = await getOllamaModels();
-
-  for (const modelConfig of OLLAMA_MODELS) {
-    try {
-      // Check if model is actually available
-      const isAvailable = availableModels.some(m => m.name === modelConfig.model);
-      if (!isAvailable) {
-        results[modelConfig.name] = {
-          status: 'not_installed',
-          available: false,
-          model: modelConfig.model,
-          message: `Run: ollama pull ${modelConfig.model}`
-        };
-        continue;
-      }
-
-      console.log(`🧪 Testing ${modelConfig.name}...`);
-      
-      const response = await callOllama(modelConfig.model, 'Hello! Just say "Hi" back.');
-      
-      results[modelConfig.name] = {
-        status: 'success',
-        available: true,
-        model: modelConfig.model,
-        response: response.substring(0, 100) // Limit response length
-      };
-      
-      console.log(`   ✅ ${modelConfig.name} works!`);
-      
-    } catch (error) {
-      results[modelConfig.name] = {
-        status: 'error',
-        available: false,
-        model: modelConfig.model,
-        error: error.message
-      };
-      console.log(`   ❌ ${modelConfig.name}: ${error.message}`);
-    }
-  }
-
-  res.json({
-    timestamp: new Date().toISOString(),
-    method: 'ollama_api',
-    ollamaUrl: OLLAMA_URL,
-    results: results
-  });
-});
-
-// Test specific model endpoint
-app.post('/api/test-model', async (req, res) => {
-  const { model = 'llama3:8b', prompt = 'What is 2+2?' } = req.body;
-  
-  const ollamaHealthy = await checkOllamaHealth();
-  if (!ollamaHealthy) {
-    return res.status(500).json({ 
-      error: 'Ollama not available',
-      message: 'Make sure Ollama is running: ollama serve'
+      error: 'No Groq API key',
+      message: 'Set GROQ_API_KEY in .env file',
+      signup: 'https://console.groq.com/keys'
     });
   }
 
   try {
-    console.log(`🧪 Testing model ${model} with custom prompt...`);
+    console.log('🧪 Testing Groq...');
     
-    const response = await callOllama(model, prompt);
+    const response = await callGroq('Hello! Just say "Hi" back.');
     
     res.json({
       status: 'success',
-      model: model,
-      prompt: prompt,
-      response: response,
+      provider: 'groq',
+      model: 'llama3-8b-8192',
+      response: response.substring(0, 100),
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error(`❌ Model test failed:`, error.message);
+    console.error('❌ Groq test failed:', error.message);
     res.status(500).json({
       status: 'error',
-      model: model,
+      provider: 'groq',
       error: error.message,
       timestamp: new Date().toISOString()
     });
@@ -234,23 +184,22 @@ app.post('/api/test-model', async (req, res) => {
 app.post('/api/diagram', async (req, res) => {
   console.log('🔥 Diagram generation request:', req.body);
   
-  const { message: userPrompt, format = 'mermaid', model = 'llama3:8b' } = req.body;
+  const { message: userPrompt, format = 'mermaid' } = req.body;
   
   const validation = validateInput(userPrompt, format);
   if (!validation.valid) {
     return res.status(400).json({ error: validation.error });
   }
 
-  const ollamaHealthy = await checkOllamaHealth();
-  if (!ollamaHealthy) {
+  if (!GROQ_API_KEY) {
     return res.status(500).json({ 
-      error: 'Ollama not available',
-      message: 'Make sure Ollama is running: ollama serve'
+      error: 'No Groq API key configured',
+      message: 'Get free key at: https://console.groq.com/keys'
     });
   }
 
   // Check cache
-  const cacheKey = `diagram_${format}_${model}_${userPrompt.toLowerCase().replace(/\s+/g, '_')}`;
+  const cacheKey = `diagram_${format}_${userPrompt.toLowerCase().replace(/\s+/g, '_')}`;
   const cached = cache.get(cacheKey);
   if (cached) {
     console.log('📦 Returning cached result');
@@ -260,84 +209,84 @@ app.post('/api/diagram', async (req, res) => {
   const prompt = createDiagramPrompt(userPrompt, format);
 
   try {
-    console.log('📡 Using Ollama...');
-    console.log('🎯 Model:', model);
-    console.log('🎯 Prompt:', prompt);
+    console.log('📡 Using Groq...');
+    console.log('🎯 Prompt:', prompt.substring(0, 100) + '...');
     
-    // Try the specified model first, then fallback to available models
-    const modelsToTry = [
-      model,
-      ...OLLAMA_MODELS.map(m => m.model).filter(m => m !== model)
-    ];
-
-    for (const currentModel of modelsToTry) {
-      try {
-        console.log(`🚀 Trying ${currentModel}...`);
-        
-        const response = await callOllama(currentModel, prompt);
-        
-        if (!response || response.length < 10) {
-          console.log(`⚠️ ${currentModel} generated short response`);
-          continue;
-        }
-
-        // Basic cleanup
-        let diagramCode = response
-          .replace(/```mermaid/gi, '')
-          .replace(/```tikz/gi, '')
-          .replace(/```plantuml/gi, '')
-          .replace(/```/g, '')
-          .trim();
-
-        // Find diagram start
-        const lines = diagramCode.split('\n');
-        const diagramStart = lines.findIndex(line => 
-          line.trim().toLowerCase().startsWith('erdiagram') ||
-          line.trim().toLowerCase().startsWith('flowchart') ||
-          line.trim().toLowerCase().startsWith('graph') ||
-          line.trim().toLowerCase().startsWith('classDiagram') ||
-          line.trim().toLowerCase().startsWith('sequenceDiagram')
-        );
-
-        if (diagramStart >= 0) {
-          diagramCode = lines.slice(diagramStart).join('\n').trim();
-        }
-
-        console.log('✅ Generated diagram code:', diagramCode.substring(0, 100) + '...');
-        
-        const result = { 
-          diagramCode,
-          format,
-          source: 'ollama',
-          message: `Generated by ${currentModel}`,
-          modelUsed: currentModel,
-          ollamaUrl: OLLAMA_URL
-        };
-        
-        // Cache successful results
-        cache.set(cacheKey, result);
-        
-        return res.json(result);
-        
-      } catch (error) {
-        console.log(`❌ ${currentModel} failed:`, error.message);
-        continue;
-      }
+    const response = await callGroq(prompt);
+    
+    if (!response || response.length < 10) {
+      console.log('⚠️ Groq generated short response, using fallback');
+      const fallbackCode = generateFallbackDiagram(userPrompt);
+      
+      const result = { 
+        diagramCode: fallbackCode,
+        format,
+        source: 'fallback_template',
+        message: 'Generated using fallback template',
+        provider: 'template'
+      };
+      
+      cache.set(cacheKey, result);
+      return res.json(result);
     }
+
+    // Basic cleanup
+    let diagramCode = response
+      .replace(/```mermaid/gi, '')
+      .replace(/```tikz/gi, '')
+      .replace(/```plantuml/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    // Extract diagram from response
+    const lines = diagramCode.split('\n');
+    const diagramStart = lines.findIndex(line => 
+      line.trim().toLowerCase().startsWith('erdiagram')
+    );
+
+    if (diagramStart >= 0) {
+      diagramCode = lines.slice(diagramStart).join('\n').trim();
+      diagramCode = diagramCode.replace(/^erdiagram/i, 'erDiagram');
+    }
+
+    // If still invalid, use fallback
+    if (!diagramCode.includes('erDiagram') || diagramCode.split('\n').length < 3) {
+      console.log('⚠️ Invalid diagram structure, using fallback');
+      diagramCode = generateFallbackDiagram(userPrompt);
+    }
+
+    console.log('✅ Generated diagram code:', diagramCode.substring(0, 100) + '...');
     
-    return res.status(500).json({
-      error: 'All models failed',
-      message: 'No Ollama model was able to generate a diagram',
-      modelsAttempted: modelsToTry,
-      suggestion: 'Try: ollama pull llama3:8b'
-    });
+    const result = { 
+      diagramCode,
+      format,
+      source: 'groq',
+      message: 'Generated by Groq Llama 3',
+      provider: 'groq',
+      model: 'llama3-8b-8192'
+    };
+    
+    // Cache successful results
+    cache.set(cacheKey, result);
+    
+    return res.json(result);
 
   } catch (error) {
-    console.error('❌ Fatal Error:', error.message);
-    return res.status(500).json({
-      error: 'Ollama request failed',
-      message: error.message
-    });
+    console.error('❌ Groq Error:', error.message);
+    
+    // Always provide fallback
+    const fallbackCode = generateFallbackDiagram(userPrompt);
+    
+    const result = { 
+      diagramCode: fallbackCode,
+      format,
+      source: 'fallback_on_error',
+      message: 'Generated using fallback template due to API error',
+      provider: 'template',
+      originalError: error.message
+    };
+    
+    return res.json(result);
   }
 });
 
@@ -351,17 +300,7 @@ app.get('/api/formats', (req, res) => {
       [OUTPUT_FORMATS.LATEX_PGF]: 'PGF/LaTeX code for advanced graphics',
       [OUTPUT_FORMATS.PLANTUML]: 'PlantUML for documentation'
     },
-    mode: 'OLLAMA_LOCAL'
-  });
-});
-
-// Available models endpoint
-app.get('/api/models', async (req, res) => {
-  const availableModels = await getOllamaModels();
-  res.json({
-    configured: OLLAMA_MODELS,
-    available: availableModels,
-    ollamaUrl: OLLAMA_URL
+    mode: 'GROQ_FREE'
   });
 });
 
@@ -371,32 +310,22 @@ app.delete('/api/cache', (req, res) => {
   res.json({ message: 'Cache cleared successfully' });
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`🚀 ChartGenie Server running at http://localhost:${PORT}`);
-  console.log(`🔗 Ollama URL: ${OLLAMA_URL}`);
-  
-  const ollamaHealthy = await checkOllamaHealth();
-  console.log(`🤖 Ollama Status: ${ollamaHealthy ? 'Available' : 'Not Running'}`);
-  
-  if (ollamaHealthy) {
-    const models = await getOllamaModels();
-    console.log(`📚 Available Models: ${models.map(m => m.name).join(', ')}`);
-  }
-  
-  console.log(`🤖 Mode: OLLAMA LOCAL (100% FREE)`);
+  console.log(`🔑 Groq API Key: ${GROQ_API_KEY ? 'Configured' : 'Missing'}`);
+  console.log(`🤖 Mode: GROQ FREE (Fast & Reliable)`);
   console.log(`📋 Endpoints:`);
   console.log(`   GET  /api/ping - Health check`);
-  console.log(`   GET  /api/test-ollama - Test all models`);
-  console.log(`   POST /api/test-model - Test specific model`);
+  console.log(`   GET  /api/test-groq - Test Groq API`);
   console.log(`   POST /api/diagram - Generate diagrams`);
   console.log(`   GET  /api/formats - List supported formats`);
-  console.log(`   GET  /api/models - List available models`);
   console.log(`   DELETE /api/cache - Clear cache`);
   
-  if (!ollamaHealthy) {
+  if (!GROQ_API_KEY) {
     console.log('\n⚠️  Setup Instructions:');
-    console.log('   1. Install: curl -fsSL https://ollama.ai/install.sh | sh');
-    console.log('   2. Start: ollama serve');
-    console.log('   3. Pull model: ollama pull llama3:8b');
+    console.log('   1. Go to: https://console.groq.com/keys');
+    console.log('   2. Sign up (free)');
+    console.log('   3. Create API key');
+    console.log('   4. Add to .env: GROQ_API_KEY=your_key_here');
   }
 });
