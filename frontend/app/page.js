@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import MermaidRenderer from './components/MermaidRenderer';
 import LaTeXRenderer from './components/LaTeXRenderer';
 import PlantUMLRenderer from './components/PlantUMLRenderer';
@@ -12,6 +12,20 @@ export default function Home() {
   const [outputFormat, setOutputFormat] = useState('mermaid');
   const [supportedFormats, setSupportedFormats] = useState({});
   const [backendStatus, setBackendStatus] = useState('checking');
+  const [sessionId, setSessionId] = useState(null);
+  
+  // Ref for the messages container
+  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+
+  // Auto-scroll to bottom when messages change
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // Check backend status and get supported formats on mount
   useEffect(() => {
@@ -71,11 +85,18 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message: input,
-          format: outputFormat 
+          format: outputFormat,
+          sessionId: sessionId,
+          currentDiagram: diagram?.code || null
         }),
       });
 
       const data = await res.json();
+
+      // Update session ID if this is the first request
+      if (!sessionId && data.sessionId) {
+        setSessionId(data.sessionId);
+      }
 
       // Remove loading message and add success message
       setMessages((prev) => prev.filter(msg => !msg.loading));
@@ -86,7 +107,8 @@ export default function Home() {
         metadata: {
           source: data.source,
           format: data.format,
-          message: data.message
+          message: data.message,
+          sessionId: data.sessionId
         }
       };
 
@@ -97,7 +119,8 @@ export default function Home() {
         code: data.diagramCode,
         format: data.format,
         source: data.source,
-        originalPrompt: input
+        originalPrompt: input,
+        sessionId: data.sessionId
       });
 
     } catch (err) {
@@ -121,6 +144,23 @@ export default function Home() {
         source: 'error',
         originalPrompt: input
       });
+    }
+  };
+
+  const clearConversation = async () => {
+    try {
+      if (sessionId) {
+        await fetch(`http://localhost:3003/api/conversation/${sessionId}`, { method: 'DELETE' });
+      }
+      setMessages([]);
+      setDiagram(null);
+      setSessionId(null);
+      setMessages((prev) => [...prev, {
+        role: 'system',
+        content: '🗑️ Conversation cleared. Starting fresh!'
+      }]);
+    } catch (err) {
+      console.error('❌ Failed to clear conversation:', err);
     }
   };
 
@@ -167,38 +207,49 @@ export default function Home() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] h-screen overflow-hidden">
       {/* Chat Sidebar */}
-      <aside className="bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 p-4 flex flex-col">
-        <div className="mb-4">
+      <aside className="bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-screen">
+        {/* Fixed Header Section */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
           <h2 className="text-xl font-semibold mb-2">🧠 Chat with ChartGenie</h2>
           
           {/* Backend Status */}
-          <div className={`text-xs px-2 py-1 rounded ${
+          <div className={`text-xs px-2 py-1 rounded mb-2 ${
             backendStatus === 'connected' ? 'bg-green-100 text-green-800' :
             backendStatus === 'disconnected' ? 'bg-red-100 text-red-800' :
             'bg-yellow-100 text-yellow-800'
           }`}>
             Backend: {backendStatus}
           </div>
+
+          {/* Session Info */}
+          {sessionId && (
+            <div className="text-xs px-2 py-1 rounded mb-2 bg-blue-100 text-blue-800">
+              Session: {sessionId.substring(0, 8)}...
+            </div>
+          )}
+
+          {/* Format Selection */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Output Format:</label>
+            <select
+              value={outputFormat}
+              onChange={(e) => setOutputFormat(e.target.value)}
+              className="w-full p-2 rounded border dark:bg-zinc-800 dark:border-zinc-600 text-sm"
+            >
+              {Object.entries(supportedFormats.formats || {}).map(([key, value]) => (
+                <option key={key} value={value}>
+                  {value.toUpperCase()} - {key.replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* Format Selection */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Output Format:</label>
-          <select
-            value={outputFormat}
-            onChange={(e) => setOutputFormat(e.target.value)}
-            className="w-full p-2 rounded border dark:bg-zinc-800 dark:border-zinc-600 text-sm"
-          >
-            {Object.entries(supportedFormats.formats || {}).map(([key, value]) => (
-              <option key={key} value={value}>
-                {value.toUpperCase()} - {key.replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto space-y-2 mb-4 pr-1">
+        {/* Scrollable Messages Section */}
+        <div 
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-2 scroll-smooth"
+        >
           {messages.map((msg, idx) => (
             <div
               key={idx}
@@ -223,14 +274,16 @@ export default function Home() {
               )}
             </div>
           ))}
+          {/* Invisible element to scroll to */}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Section */}
-        <div className="mt-auto space-y-2">
+        {/* Fixed Input Section */}
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Describe your diagram..."
+              placeholder={sessionId ? "Add tables, modify schema, or ask questions..." : "Describe your database schema..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSend()}
@@ -248,6 +301,12 @@ export default function Home() {
           
           {/* Control Buttons */}
           <div className="flex gap-2 text-xs">
+            <button
+              onClick={clearConversation}
+              className="px-2 py-1 bg-blue-200 dark:bg-blue-700 rounded hover:bg-blue-300"
+            >
+              New Chat
+            </button>
             <button
               onClick={clearCache}
               className="px-2 py-1 bg-gray-200 dark:bg-zinc-700 rounded hover:bg-gray-300"
@@ -279,8 +338,11 @@ export default function Home() {
           {diagram && (
             <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
               Format: {diagram.format} | Source: {diagram.source}
+              {diagram.sessionId && (
+                <span> | Session: {diagram.sessionId.substring(0, 8)}...</span>
+              )}
               {diagram.originalPrompt && (
-                <span> | Prompt: "{diagram.originalPrompt}"</span>
+                <span> | Last: "{diagram.originalPrompt}"</span>
               )}
             </div>
           )}
@@ -292,12 +354,15 @@ export default function Home() {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-zinc-500">
-                <p className="mb-2">Start by describing a diagram in the chat</p>
-                <p className="text-sm">
-                  Examples: "ER diagram for a hospital", "Flowchart for user login", "Class diagram for e-commerce"
+                <p className="mb-2">Start a conversation about your database schema</p>
+                <p className="text-sm mb-4">
+                  Try: "I need a hospital database" → "Add a pharmacy table" → "Connect patients to pharmacies"
                 </p>
-                <p className="text-xs mt-2">
-                  Supports: Mermaid, TikZ/LaTeX, PGF, PlantUML
+                <p className="text-xs">
+                  💬 Conversational: Ask for modifications, additions, or completely new schemas
+                </p>
+                <p className="text-xs mt-1">
+                  🔧 Supports: Mermaid, TikZ/LaTeX, PGF, PlantUML
                 </p>
               </div>
             </div>
