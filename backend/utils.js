@@ -1,6 +1,12 @@
 const { OUTPUT_FORMATS, CONFIG } = require('./config');
+const { CONNECTION_RULES, RELATIONSHIP_LABELS, TABLE_TYPE_FIELDS } = require('./templates');
 
-// Input validation
+/**
+ * Validate user input
+ * @param {string} input - User input to validate
+ * @param {string} format - Output format
+ * @returns {Object} - Validation result
+ */
 function validateInput(input, format = 'mermaid') {
   if (!input || typeof input !== 'string') return { valid: false, error: 'Invalid input' };
   if (input.length > CONFIG.MAX_INPUT_LENGTH) return { valid: false, error: 'Input too long' };
@@ -10,7 +16,11 @@ function validateInput(input, format = 'mermaid') {
   return { valid: true };
 }
 
-// Extract entity names from mermaid diagram
+/**
+ * Extract entity names from mermaid diagram
+ * @param {string} diagramCode - Mermaid diagram code
+ * @returns {Array<string>} - Array of entity names
+ */
 function extractEntitiesFromDiagram(diagramCode) {
   if (!diagramCode) return [];
   
@@ -30,7 +40,50 @@ function extractEntitiesFromDiagram(diagramCode) {
   return [...new Set(entities)]; // Remove duplicates
 }
 
-// Improved modification intent detection
+/**
+ * Parse existing diagram to understand structure
+ * @param {string} diagramCode - Existing diagram code
+ * @returns {Array<Object>} - Array of entities with their fields
+ */
+function parseExistingDiagram(diagramCode) {
+  const entities = [];
+  const lines = diagramCode.split('\n');
+  let currentEntity = null;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Check for entity definition
+    const entityMatch = trimmed.match(/^([A-Z_]+)\s*\{/);
+    if (entityMatch) {
+      currentEntity = {
+        name: entityMatch[1],
+        fields: []
+      };
+      entities.push(currentEntity);
+      continue;
+    }
+    
+    // Check for field definition
+    if (currentEntity && trimmed && !trimmed.includes('}') && !trimmed.includes('||--')) {
+      currentEntity.fields.push(trimmed);
+    }
+    
+    // Reset when entity ends
+    if (trimmed === '}') {
+      currentEntity = null;
+    }
+  }
+  
+  return entities;
+}
+
+/**
+ * Detect if user input is requesting a modification to existing diagram
+ * @param {string} userInput - User input
+ * @param {string} currentDiagram - Current diagram code
+ * @returns {boolean} - Whether this is a modification request
+ */
 function detectModificationIntent(userInput, currentDiagram) {
   if (!currentDiagram) return false;
   
@@ -62,44 +115,11 @@ function detectModificationIntent(userInput, currentDiagram) {
   return hasWeak && hasTableKeywords;
 }
 
-// Extract key information from user message for history
-function summarizeExchange(userMessage, diagramCode) {
-  const entities = extractEntitiesFromDiagram(diagramCode);
-  return `Created diagram with entities: ${entities.join(', ')}`;
-}
-
-// Validate that modifications preserve existing entities
-function validateModificationPreservesEntities(newDiagram, originalDiagram) {
-  if (!originalDiagram || !newDiagram) return false;
-  
-  const originalEntities = extractEntitiesFromDiagram(originalDiagram);
-  const newEntities = extractEntitiesFromDiagram(newDiagram);
-  
-  console.log('🔍 Validation check:');
-  console.log('Original entities:', originalEntities);
-  console.log('New entities:', newEntities);
-  
-  // Check that ALL original entities are present (strict check)
-  const missingEntities = originalEntities.filter(entity => 
-    !newEntities.includes(entity)
-  );
-  
-  if (missingEntities.length > 0) {
-    console.log('❌ Missing entities in modified diagram:', missingEntities);
-    return false;
-  }
-  
-  // Check that we have MORE entities (indicating addition)
-  if (newEntities.length <= originalEntities.length) {
-    console.log('❌ No new entities added, same or fewer entities detected');
-    return false;
-  }
-  
-  console.log('✅ Modification validation passed');
-  return true;
-}
-
-// Enhanced table name extraction from user input
+/**
+ * Extract table name from user input
+ * @param {string} input - User input
+ * @returns {string|null} - Extracted table name or null
+ */
 function extractTableNameFromInput(input) {
   const lower = input.toLowerCase();
   
@@ -154,11 +174,141 @@ function extractTableNameFromInput(input) {
   return null;
 }
 
+/**
+ * Find entities that might logically connect to the new table
+ * @param {string} newTableName - Name of the new table
+ * @param {Array<Object>} existingEntities - Existing entities
+ * @returns {Array<string>} - Array of entity names to connect
+ */
+function findPotentialConnections(newTableName, existingEntities) {
+  const connections = [];
+  const newName = newTableName.toLowerCase();
+  
+  // Check if any existing entities should connect to this new table
+  existingEntities.forEach(entity => {
+    const entityName = entity.name.toLowerCase();
+    
+    // Check direct rules
+    if (CONNECTION_RULES[newName] && CONNECTION_RULES[newName].includes(entity.name)) {
+      connections.push(entity.name);
+    }
+    
+    // Check reverse rules
+    Object.keys(CONNECTION_RULES).forEach(key => {
+      if (entityName.includes(key) && CONNECTION_RULES[key].includes(newName.toUpperCase())) {
+        connections.push(entity.name);
+      }
+    });
+  });
+  
+  return [...new Set(connections)]; // Remove duplicates
+}
+
+/**
+ * Generate a new table based on user input and existing context
+ * @param {string} tableName - Name of the table to generate
+ * @param {Array<Object>} existingEntities - Existing entities
+ * @returns {string} - Generated table structure
+ */
+function generateNewTable(tableName, existingEntities) {
+  const normalizedName = tableName.toUpperCase();
+  const lowerName = tableName.toLowerCase();
+  
+  console.log(`🔨 Generating new table: ${normalizedName}`);
+  
+  // Start with basic table structure
+  let newTable = `    ${normalizedName} {
+        int ${lowerName}_id PK
+        string name`;
+  
+  // Add specific fields for this table type
+  if (TABLE_TYPE_FIELDS[lowerName]) {
+    TABLE_TYPE_FIELDS[lowerName].forEach(field => {
+      newTable += `\n        ${field}`;
+    });
+  } else {
+    // Generic fields for unknown table types
+    newTable += `\n        text description\n        datetime created_at`;
+  }
+  
+  // Find potential foreign key connections
+  const connections = findPotentialConnections(tableName, existingEntities);
+  console.log(`🔗 Found potential connections for ${normalizedName}:`, connections);
+  
+  // Add foreign keys
+  connections.forEach(connectionEntity => {
+    const fkName = connectionEntity.toLowerCase() + '_id';
+    newTable += `\n        int ${fkName} FK`;
+  });
+  
+  newTable += '\n    }';
+  
+  // Add relationships
+  connections.forEach(connectionEntity => {
+    const relationship = '||--o{'; // Most cases are one-to-many
+    const label = RELATIONSHIP_LABELS[connectionEntity.toLowerCase()]?.[tableName] || 'has';
+    newTable += `\n    ${connectionEntity} ${relationship} ${normalizedName} : ${label}`;
+  });
+  
+  console.log(`✅ Generated table structure for ${normalizedName}`);
+  return newTable;
+}
+
+/**
+ * Validate that modifications preserve existing entities
+ * @param {string} newDiagram - New diagram code
+ * @param {string} originalDiagram - Original diagram code
+ * @returns {boolean} - Whether entities are preserved
+ */
+function validateModificationPreservesEntities(newDiagram, originalDiagram) {
+  if (!originalDiagram || !newDiagram) return false;
+  
+  const originalEntities = extractEntitiesFromDiagram(originalDiagram);
+  const newEntities = extractEntitiesFromDiagram(newDiagram);
+  
+  console.log('🔍 Validation check:');
+  console.log('Original entities:', originalEntities);
+  console.log('New entities:', newEntities);
+  
+  // Check that ALL original entities are present (strict check)
+  const missingEntities = originalEntities.filter(entity => 
+    !newEntities.includes(entity)
+  );
+  
+  if (missingEntities.length > 0) {
+    console.log('❌ Missing entities in modified diagram:', missingEntities);
+    return false;
+  }
+  
+  // Check that we have MORE entities (indicating addition)
+  if (newEntities.length <= originalEntities.length) {
+    console.log('❌ No new entities added, same or fewer entities detected');
+    return false;
+  }
+  
+  console.log('✅ Modification validation passed');
+  return true;
+}
+
+/**
+ * Extract key information from user message for history
+ * @param {string} userMessage - User message
+ * @param {string} diagramCode - Generated diagram code
+ * @returns {string} - Summary of the exchange
+ */
+function summarizeExchange(userMessage, diagramCode) {
+  const entities = extractEntitiesFromDiagram(diagramCode);
+  return `Created diagram with entities: ${entities.join(', ')}`;
+}
+
 module.exports = {
   validateInput,
   extractEntitiesFromDiagram,
+  parseExistingDiagram,
   detectModificationIntent,
-  summarizeExchange,
+  extractTableNameFromInput,
+  findPotentialConnections,
+  generateNewTable,
   validateModificationPreservesEntities,
-  extractTableNameFromInput
+  summarizeExchange
 };

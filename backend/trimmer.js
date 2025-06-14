@@ -1,246 +1,222 @@
-// trimmer.js - Aggressive diagram code extraction and cleaning
-
 /**
- * Aggressively extract clean diagram code from AI-generated responses
- * Removes explanations, thinking process, markdown, and extra text
+ * Functions for cleaning and processing diagram code
  */
 
-function trimDiagramCode(rawCode, format = 'mermaid') {
-  if (!rawCode || typeof rawCode !== 'string') {
-    console.log('⚠️ Trimmer: No code provided');
-    return '';
-  }
-
-  console.log('🔄 Trimmer: Processing raw code...', rawCode.substring(0, 100) + '...');
-
-  let cleaned = rawCode;
-
-  // Step 1: Remove common wrapper patterns
-  cleaned = cleaned
-    .replace(/<think>.*?<\/think>/gs, '') // Remove thinking blocks
-    .replace(/```mermaid\s*/gi, '')
-    .replace(/```latex\s*/gi, '')
-    .replace(/```tikz\s*/gi, '')
-    .replace(/```plantuml\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .replace(/^\s*```.*$/gm, '') // Remove any remaining code fence lines
+/**
+ * Clean and normalize diagram code from AI response
+ * @param {string} response - Raw response from AI
+ * @param {string} format - Expected diagram format
+ * @returns {string} - Cleaned diagram code
+ */
+function cleanDiagramCode(response, format = 'mermaid') {
+  if (!response) return '';
+  
+  // Basic cleanup - remove code blocks
+  let diagramCode = response
+    .replace(/```mermaid/gi, '')
+    .replace(/```tikz/gi, '')
+    .replace(/```plantuml/gi, '')
+    .replace(/```/g, '')
     .trim();
-
-  // Step 2: Remove common explanation patterns
-  const explanationPatterns = [
-    /^.*?Here's.*?diagram.*?:/i,
-    /^.*?Here is.*?diagram.*?:/i,
-    /^.*?This.*?diagram.*?:/i,
-    /^.*?The.*?diagram.*?:/i,
-    /^.*?I'll create.*?:/i,
-    /^.*?Let me create.*?:/i,
-    /^.*?Below is.*?:/i,
-    /^.*?Above.*?:/i,
-    /Note:.*$/gm,
-    /Explanation:.*$/gm,
-    /Description:.*$/gm,
-    /This diagram.*$/gm,
-    /The above.*$/gm,
-    /As you can see.*$/gm,
-    /^\/\/.*$/gm, // Remove comment lines
-    /^#.*$/gm,    // Remove markdown headers
-  ];
-
-  explanationPatterns.forEach(pattern => {
-    cleaned = cleaned.replace(pattern, '');
-  });
-
-  // Step 3: Format-specific extraction
+  
+  // Format-specific cleanup
   if (format === 'mermaid') {
-    cleaned = extractMermaidCode(cleaned);
-  } else if (format === 'tikz' || format === 'pgf') {
-    cleaned = extractLatexCode(cleaned, format);
-  } else if (format === 'plantuml') {
-    cleaned = extractPlantUMLCode(cleaned);
+    return cleanMermaidCode(diagramCode);
   }
-
-  // Step 4: Final cleanup
-  cleaned = cleaned
-    .replace(/^\s*[\r\n]+/gm, '') // Remove empty lines at start
-    .replace(/[\r\n]+\s*$/gm, '') // Remove empty lines at end
-    .trim();
-
-  console.log('✨ Trimmer: Final result:', cleaned.substring(0, 150) + '...');
   
-  return cleaned;
+  return diagramCode;
 }
 
-function extractMermaidCode(text) {
-  const validStarts = [
-    'graph', 'flowchart', 'erdiagram', 'classdiagram', 
-    'sequencediagram', 'pie', 'journey', 'gitgraph',
-    'gantt', 'mindmap', 'timeline', 'sankey'
-  ];
-
-  // Find the start of the actual diagram
-  const lines = text.split('\n');
-  let diagramStart = -1;
-  let diagramEnd = lines.length;
-
-  // Find diagram start
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim().toLowerCase();
-    if (validStarts.some(start => line.startsWith(start))) {
-      diagramStart = i;
-      break;
-    }
-  }
-
-  if (diagramStart === -1) {
-    console.log('⚠️ Trimmer: No valid Mermaid diagram start found');
-    return text; // Return as-is if no valid start found
-  }
-
-  // Find diagram end (look for explanatory text or obvious end markers)
-  for (let i = diagramStart + 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    // Skip empty lines
-    if (line === '') continue;
-    
-    // End markers
-    if (
-      line.toLowerCase().includes('explanation') ||
-      line.toLowerCase().includes('this diagram') ||
-      line.toLowerCase().includes('the above') ||
-      line.toLowerCase().includes('note:') ||
-      line.toLowerCase().includes('description:') ||
-      line.startsWith('//') ||
-      line.startsWith('#') ||
-      line.startsWith('*') ||
-      line.startsWith('-') && !line.includes('-->') ||
-      (line.length > 100 && 
-       !line.includes('-->') && 
-       !line.includes('||--') && 
-       !line.includes('{') && 
-       !line.includes('}') &&
-       !line.includes('|'))
-    ) {
-      diagramEnd = i;
-      break;
-    }
-  }
-
-  const result = lines.slice(diagramStart, diagramEnd)
-    .join('\n')
-    .trim();
-
-  console.log('🔍 Mermaid extracted:', result.substring(0, 100) + '...');
-  return result;
-}
-
-function extractLatexCode(text, format) {
-  // Find \begin{tikzpicture} or similar
-  const beginPattern = format === 'tikz' ? 
-    /\\begin\{tikzpicture\}/i : 
-    /\\begin\{pgfpicture\}/i;
+/**
+ * Clean and validate Mermaid diagram code
+ * @param {string} code - Raw mermaid code
+ * @returns {string} - Cleaned mermaid code
+ */
+function cleanMermaidCode(code) {
+  if (!code) return '';
   
-  const endPattern = format === 'tikz' ? 
-    /\\end\{tikzpicture\}/i : 
-    /\\end\{pgfpicture\}/i;
-
-  const startMatch = text.match(beginPattern);
-  const endMatch = text.match(endPattern);
-
-  if (startMatch && endMatch) {
-    const start = startMatch.index;
-    const end = endMatch.index + endMatch[0].length;
-    return text.substring(start, end).trim();
-  }
-
-  // If no proper delimiters, return cleaned text
-  return text.replace(/^.*?\\begin/s, '\\begin').trim();
-}
-
-function extractPlantUMLCode(text) {
-  // Look for @startuml and @enduml
-  const startMatch = text.match(/@startuml/i);
-  const endMatch = text.match(/@enduml/i);
-
-  if (startMatch && endMatch) {
-    const start = startMatch.index;
-    const end = endMatch.index + endMatch[0].length;
-    return text.substring(start, end).trim();
-  }
-
-  // If no proper delimiters, try to find class/participant definitions
-  const lines = text.split('\n');
-  let diagramStart = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim().toLowerCase();
-    if (line.startsWith('class ') || 
-        line.startsWith('participant ') ||
-        line.startsWith('actor ') ||
-        line.includes(' -> ') ||
-        line.includes(' --> ')) {
-      diagramStart = i;
-      break;
-    }
-  }
-
+  const lines = code.split('\n');
+  
+  // Find the start of the diagram
+  const diagramStart = lines.findIndex(line => 
+    line.trim().toLowerCase().startsWith('erdiagram')
+  );
+  
   if (diagramStart >= 0) {
-    return lines.slice(diagramStart).join('\n').trim();
+    code = lines.slice(diagramStart).join('\n').trim();
+    // Normalize the erDiagram declaration
+    code = code.replace(/^erdiagram/i, 'erDiagram');
   }
-
-  return text;
+  
+  return code;
 }
 
-function validateDiagramCode(code, format) {
-  if (!code || code.length < 5) {
-    return { valid: false, reason: 'Code too short' };
+/**
+ * Validate diagram structure
+ * @param {string} diagramCode - Diagram code to validate
+ * @param {string} format - Expected format
+ * @returns {Object} - Validation result
+ */
+function validateDiagramStructure(diagramCode, format = 'mermaid') {
+  if (!diagramCode || typeof diagramCode !== 'string') {
+    return { valid: false, error: 'Empty or invalid diagram code' };
   }
-
+  
   if (format === 'mermaid') {
-    const validStarts = ['graph', 'flowchart', 'erdiagram', 'classdiagram', 'sequencediagram'];
-    const hasValidStart = validStarts.some(start => 
-      code.toLowerCase().trim().startsWith(start)
-    );
-    
-    if (!hasValidStart) {
-      return { valid: false, reason: 'Invalid Mermaid diagram type' };
-    }
-
-    // Check for basic Mermaid syntax
-    if (format === 'mermaid' && 
-        !code.includes('{') && 
-        !code.includes('-->') && 
-        !code.includes('||--') &&
-        !code.includes('[') &&
-        !code.includes('(')) {
-      return { valid: false, reason: 'Missing Mermaid syntax elements' };
-    }
+    return validateMermaidStructure(diagramCode);
   }
-
-  if (format === 'tikz' && !code.includes('\\begin{tikzpicture}')) {
-    return { valid: false, reason: 'Missing TikZ structure' };
-  }
-
-  if (format === 'plantuml' && !code.includes('@start') && !code.includes('->') && !code.includes('class ')) {
-    return { valid: false, reason: 'Missing PlantUML syntax' };
-  }
-
+  
   return { valid: true };
 }
 
-// Clean up obvious AI artifacts
-function removeAIArtifacts(text) {
-  return text
-    .replace(/^(Sure,?|Certainly,?|Of course,?)/i, '')
-    .replace(/^(Here's|Here is)/i, '')
-    .replace(/^(I'll|I will)/i, '')
-    .replace(/^(Let me)/i, '')
-    .replace(/\b(AI|artificial intelligence|language model)\b/gi, '')
-    .trim();
+/**
+ * Validate Mermaid diagram structure
+ * @param {string} code - Mermaid diagram code
+ * @returns {Object} - Validation result
+ */
+function validateMermaidStructure(code) {
+  // Check for erDiagram declaration
+  if (!code.includes('erDiagram')) {
+    return { valid: false, error: 'Missing erDiagram declaration' };
+  }
+  
+  // Check minimum structure (should have at least a few lines)
+  const lines = code.split('\n').filter(line => line.trim());
+  if (lines.length < 3) {
+    return { valid: false, error: 'Diagram too simple or malformed' };
+  }
+  
+  // Check for at least one entity
+  const hasEntity = lines.some(line => 
+    line.trim().match(/^[A-Z_][A-Z0-9_]*\s*\{/)
+  );
+  
+  if (!hasEntity) {
+    return { valid: false, error: 'No entities found in diagram' };
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Extract and clean diagram from multi-line response
+ * @param {string} response - Full AI response
+ * @param {string} format - Expected format
+ * @returns {string} - Extracted diagram code
+ */
+function extractDiagramFromResponse(response, format = 'mermaid') {
+  if (!response) return '';
+  
+  const lines = response.split('\n');
+  let diagramLines = [];
+  let inDiagram = false;
+  let foundStart = false;
+  
+  for (const line of lines) {
+    const trimmed = line.trim().toLowerCase();
+    
+    // Look for diagram start
+    if (!foundStart && (
+      trimmed.startsWith('erdiagram') ||
+      trimmed.startsWith('digraph') ||
+      trimmed.startsWith('@startuml')
+    )) {
+      foundStart = true;
+      inDiagram = true;
+      diagramLines.push(line);
+      continue;
+    }
+    
+    // If we found start, collect lines until end or empty lines
+    if (foundStart && inDiagram) {
+      // Stop at code block end or @enduml
+      if (trimmed === '```' || trimmed === '@enduml') {
+        break;
+      }
+      
+      diagramLines.push(line);
+      
+      // For mermaid, stop if we hit multiple empty lines
+      if (format === 'mermaid' && !trimmed && diagramLines.length > 5) {
+        const lastFewLines = diagramLines.slice(-3);
+        const allEmpty = lastFewLines.every(l => !l.trim());
+        if (allEmpty) break;
+      }
+    }
+  }
+  
+  return diagramLines.join('\n').trim();
+}
+
+/**
+ * Normalize entity names in diagram
+ * @param {string} code - Diagram code
+ * @returns {string} - Code with normalized entity names
+ */
+function normalizeEntityNames(code) {
+  if (!code) return '';
+  
+  const lines = code.split('\n');
+  const normalizedLines = lines.map(line => {
+    // Match entity declarations and normalize to uppercase
+    const entityMatch = line.match(/^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*(\{.*)$/);
+    if (entityMatch) {
+      const [, spaces, entityName, rest] = entityMatch;
+      return `${spaces}${entityName.toUpperCase()}${rest}`;
+    }
+    
+    // Match relationship lines and normalize entity references
+    const relationMatch = line.match(/^(\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s+(\|\|--.*--\|\||\|\|--o\{|o\{--\|\|)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
+    if (relationMatch) {
+      const [, spaces, entity1, relation, entity2, label] = relationMatch;
+      return `${spaces}${entity1.toUpperCase()} ${relation} ${entity2.toUpperCase()} : ${label}`;
+    }
+    
+    return line;
+  });
+  
+  return normalizedLines.join('\n');
+}
+
+/**
+ * Remove duplicate relationships from diagram
+ * @param {string} code - Diagram code
+ * @returns {string} - Code with duplicate relationships removed
+ */
+function removeDuplicateRelationships(code) {
+  if (!code) return '';
+  
+  const lines = code.split('\n');
+  const relationships = new Set();
+  const cleanedLines = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Check if this is a relationship line
+    if (trimmed.includes('||--') || trimmed.includes('o{--') || trimmed.includes('}o--')) {
+      // Normalize the relationship for comparison
+      const normalized = trimmed.replace(/\s+/g, ' ').toLowerCase();
+      
+      if (!relationships.has(normalized)) {
+        relationships.add(normalized);
+        cleanedLines.push(line);
+      }
+      // Skip duplicate relationships
+    } else {
+      cleanedLines.push(line);
+    }
+  }
+  
+  return cleanedLines.join('\n');
 }
 
 module.exports = {
-  trimDiagramCode,
-  validateDiagramCode,
-  removeAIArtifacts
+  cleanDiagramCode,
+  cleanMermaidCode,
+  validateDiagramStructure,
+  validateMermaidStructure,
+  extractDiagramFromResponse,
+  normalizeEntityNames,
+  removeDuplicateRelationships
 };

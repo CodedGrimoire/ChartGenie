@@ -1,160 +1,102 @@
-const { detectModificationIntent, extractTableNameFromInput } = require('./utils');
+const { callGroq } = require('./groqService');
+const { getTemplateByKeywords } = require('./templates');
+const { cleanDiagramCode, validateDiagramStructure, extractDiagramFromResponse } = require('./trimmer');
+const { 
+  detectModificationIntent, 
+  extractTableNameFromInput, 
+  parseExistingDiagram, 
+  generateNewTable,
+  validateModificationPreservesEntities 
+} = require('./utils');
+const { CONFIG } = require('./config');
 
-// Parse existing diagram to understand structure
-function parseExistingDiagram(diagramCode) {
-  const entities = [];
-  const lines = diagramCode.split('\n');
-  let currentEntity = null;
+/**
+ * Create a conversational prompt based on user input and history
+ * @param {string} userInput - User's message
+ * @param {string} outputFormat - Desired output format
+ * @param {Array} conversationHistory - Previous conversation exchanges
+ * @param {string} currentDiagram - Current diagram state
+ * @returns {string} - Generated prompt for AI
+ */
+function createConversationalPrompt(userInput, outputFormat, conversationHistory, currentDiagram) {
+  const history = conversationHistory.slice(-CONFIG.CONTEXT_HISTORY_SIZE); // Keep last 3 exchanges for context
   
-  for (const line of lines) {
-    const trimmed = line.trim();
-    
-    // Check for entity definition
-    const entityMatch = trimmed.match(/^([A-Z_]+)\s*\{/);
-    if (entityMatch) {
-      currentEntity = {
-        name: entityMatch[1],
-        fields: []
-      };
-      entities.push(currentEntity);
-      continue;
+  let contextPrompt = '';
+  
+  // Build conversation context
+  if (history.length > 0) {
+    contextPrompt = '\nConversation context:\n';
+    history.forEach((exchange, idx) => {
+      contextPrompt += `- User said: "${exchange.userMessage}"\n`;
+    });
+  }
+  
+  // Determine if this is a modification request
+  const isModification = detectModificationIntent(userInput, currentDiagram);
+  
+  if (outputFormat === 'mermaid') {
+    if (isModification && currentDiagram) {
+      return `You are modifying an existing database diagram. DO NOT CREATE A NEW DIAGRAM.
+
+EXISTING DIAGRAM (COPY THIS EXACTLY AND ADD TO IT):
+${currentDiagram}
+
+USER REQUEST: "${userInput}"
+
+STEP-BY-STEP INSTRUCTIONS:
+1. COPY the entire existing diagram above EXACTLY as it is
+2. ADD the new table/entity that the user requested 
+3. ADD appropriate relationships between new and existing entities
+4. Output the COMPLETE diagram with ALL original entities PLUS the new addition
+
+EXAMPLE OF CORRECT BEHAVIOR:
+If existing diagram has USER and PRODUCT, and user says "add reviews"
+You should output: USER + PRODUCT + REVIEWS (all three tables)
+
+FORBIDDEN: Do NOT recreate, do NOT start fresh, do NOT remove existing entities
+
+Output ONLY the complete mermaid erDiagram with all existing + new entities:`;
+    } else {
+      return `You are creating a new database diagram.${contextPrompt}
+
+USER REQUEST: "${userInput}"
+
+Create a complete mermaid erDiagram with:
+- Relevant entities for the requested domain
+- Proper primary keys (PK) and foreign keys (FK)
+- Realistic relationships between entities
+- Appropriate data types
+
+Format example:
+erDiagram
+    ENTITY1 {
+        int id PK
+        string name
+        string email
     }
-    
-    // Check for field definition
-    if (currentEntity && trimmed && !trimmed.includes('}') && !trimmed.includes('||--')) {
-      currentEntity.fields.push(trimmed);
+    ENTITY2 {
+        int id PK
+        int entity1_id FK
+        string description
     }
-    
-    // Reset when entity ends
-    if (trimmed === '}') {
-      currentEntity = null;
+    ENTITY1 ||--o{ ENTITY2 : has
+
+Output only valid mermaid erDiagram syntax:`;
     }
   }
   
-  return entities;
+  return `Create a ${outputFormat} diagram based on: "${userInput}"
+${currentDiagram ? `\nExisting diagram:\n${currentDiagram}` : ''}
+Output only valid ${outputFormat} syntax.`;
 }
 
-// Find entities that might logically connect to the new table
-function findPotentialConnections(newTableName, existingEntities) {
-  const connections = [];
-  const newName = newTableName.toLowerCase();
-  
-  // Common connection patterns
-  const connectionRules = {
-    'user': ['USER', 'CUSTOMER', 'PATIENT', 'DOCTOR'],
-    'patient': ['DOCTOR', 'HOSPITAL'],
-    'order': ['USER', 'CUSTOMER'],
-    'product': ['CATEGORY', 'SUPPLIER'],
-    'appointment': ['PATIENT', 'DOCTOR'],
-    'review': ['USER', 'PRODUCT'],
-    'payment': ['ORDER', 'USER'],
-    'prescription': ['PATIENT', 'DOCTOR']
-  };
-  
-  // Check if any existing entities should connect to this new table
-  existingEntities.forEach(entity => {
-    const entityName = entity.name.toLowerCase();
-    
-    // Check direct rules
-    if (connectionRules[newName] && connectionRules[newName].includes(entity.name)) {
-      connections.push(entity.name);
-    }
-    
-    // Check reverse rules
-    Object.keys(connectionRules).forEach(key => {
-      if (entityName.includes(key) && connectionRules[key].includes(newName.toUpperCase())) {
-        connections.push(entity.name);
-      }
-    });
-  });
-  
-  return [...new Set(connections)]; // Remove duplicates
-}
-
-// Determine relationship type between entities
-function determineRelationshipType(newTable, existingTable) {
-  const relationships = {
-    'user_to_many': '||--o{',
-    'one_to_one': '||--||',
-    'many_to_many': '}o--o{'
-  };
-  
-  // Most cases are one-to-many from existing to new
-  return relationships.user_to_many;
-}
-
-// Determine relationship label
-function determineRelationshipLabel(fromEntity, toEntity) {
-  const labels = {
-    'user': { 'review': 'writes', 'order': 'places', 'payment': 'makes', 'address': 'lives_at' },
-    'product': { 'review': 'receives', 'category': 'belongs_to', 'inventory': 'has_stock' },
-    'order': { 'payment': 'paid_by', 'item': 'contains' },
-    'patient': { 'prescription': 'receives', 'appointment': 'schedules' },
-    'doctor': { 'prescription': 'prescribes', 'appointment': 'has' },
-    'pharmacy': { 'prescription': 'fills' }
-  };
-  
-  return labels[fromEntity]?.[toEntity] || 'has';
-}
-
-// Generate a new table based on user input and existing context
-function generateNewTable(tableName, existingEntities) {
-  const normalizedName = tableName.toUpperCase();
-  const lowerName = tableName.toLowerCase();
-  
-  console.log(`🔨 Generating new table: ${normalizedName}`);
-  
-  // Start with basic table structure
-  let newTable = `    ${normalizedName} {
-        int ${lowerName}_id PK
-        string name`;
-  
-  // Add fields based on table type
-  const tableTypeFields = {
-    'review': ['int rating', 'text comment', 'datetime created_at'],
-    'category': ['string description', 'string slug'],
-    'payment': ['decimal amount', 'string payment_method', 'string status', 'datetime processed_at'],
-    'address': ['string street', 'string city', 'string state', 'string zip_code', 'string country'],
-    'inventory': ['int quantity', 'int min_threshold', 'datetime last_updated'],
-    'supplier': ['string company_name', 'string contact_person', 'string email', 'string phone'],
-    'pharmacy': ['string address', 'string phone', 'string license_number'],
-    'prescription': ['text medication', 'string dosage', 'text instructions', 'datetime prescribed_date'],
-    'department': ['string description', 'string location']
-  };
-  
-  // Add specific fields for this table type
-  if (tableTypeFields[lowerName]) {
-    tableTypeFields[lowerName].forEach(field => {
-      newTable += `\n        ${field}`;
-    });
-  } else {
-    // Generic fields for unknown table types
-    newTable += `\n        text description\n        datetime created_at`;
-  }
-  
-  // Find potential foreign key connections
-  const connections = findPotentialConnections(tableName, existingEntities);
-  console.log(`🔗 Found potential connections for ${normalizedName}:`, connections);
-  
-  // Add foreign keys
-  connections.forEach(connectionEntity => {
-    const fkName = connectionEntity.toLowerCase() + '_id';
-    newTable += `\n        int ${fkName} FK`;
-  });
-  
-  newTable += '\n    }';
-  
-  // Add relationships
-  connections.forEach(connectionEntity => {
-    const relationship = determineRelationshipType(tableName, connectionEntity.toLowerCase());
-    newTable += `\n    ${connectionEntity} ${relationship} ${normalizedName} : ${determineRelationshipLabel(connectionEntity.toLowerCase(), tableName)}`;
-  });
-  
-  console.log(`✅ Generated table structure for ${normalizedName}`);
-  return newTable;
-}
-
-// Enhanced conversational fallback that preserves existing diagrams
+/**
+ * Generate conversational fallback when AI fails
+ * @param {string} userInput - User input
+ * @param {Array} conversationHistory - Conversation history
+ * @param {string} currentDiagram - Current diagram
+ * @returns {string} - Fallback diagram code
+ */
 function generateConversationalFallback(userInput, conversationHistory, currentDiagram) {
   const isModification = detectModificationIntent(userInput, currentDiagram);
   
@@ -189,94 +131,102 @@ function generateConversationalFallback(userInput, conversationHistory, currentD
   
   // Generate new diagram based on conversation (existing logic)
   console.log('🆕 Generating fresh diagram');
-  const lower = userInput.toLowerCase();
+  return getTemplateByKeywords(userInput);
+}
+
+/**
+ * Main diagram generation function
+ * @param {Object} params - Generation parameters
+ * @returns {Promise<Object>} - Generation result
+ */
+async function generateDiagram({
+  userPrompt,
+  format = 'mermaid',
+  conversationHistory = [],
+  currentDiagram = null
+}) {
+  console.log('🔥 Generating diagram with prompt:', userPrompt);
   
-  if (lower.includes('hospital') || lower.includes('medical') || lower.includes('patient')) {
-    return `erDiagram
-    PATIENT {
-        int patient_id PK
-        string first_name
-        string last_name
-        string email
-        string phone
-        date date_of_birth
+  const prompt = createConversationalPrompt(userPrompt, format, conversationHistory, currentDiagram);
+  
+  try {
+    console.log('💬 Using Groq for conversational diagram...');
+    console.log('🔍 Is modification request:', detectModificationIntent(userPrompt, currentDiagram));
+    console.log('📝 Current diagram exists:', !!currentDiagram);
+    
+    const response = await callGroq(prompt);
+    
+    if (!response || response.length < 10) {
+      console.log('⚠️ Groq generated short response, using conversational fallback');
+      const fallbackCode = generateConversationalFallback(userPrompt, conversationHistory, currentDiagram);
+      
+      return {
+        diagramCode: fallbackCode,
+        format,
+        source: 'conversational_fallback',
+        message: 'Generated using conversational fallback template',
+        provider: 'template'
+      };
     }
-    DOCTOR {
-        int doctor_id PK
-        string first_name
-        string last_name
-        string specialty
-        string email
+
+    // Clean and extract diagram code
+    let diagramCode = cleanDiagramCode(response, format);
+    
+    // Additional extraction if needed
+    if (!diagramCode.includes('erDiagram')) {
+      diagramCode = extractDiagramFromResponse(response, format);
     }
-    APPOINTMENT {
-        int appointment_id PK
-        int patient_id FK
-        int doctor_id FK
-        datetime appointment_datetime
-        string status
-        text notes
+
+    // Validate modification requests preserve existing entities
+    const isModificationRequest = detectModificationIntent(userPrompt, currentDiagram);
+    if (isModificationRequest && currentDiagram) {
+      console.log('🔍 Validating that AI preserved existing entities...');
+      const preservedCorrectly = validateModificationPreservesEntities(diagramCode, currentDiagram);
+      if (!preservedCorrectly) {
+        console.log('❌ AI did not preserve existing entities, using smart fallback');
+        diagramCode = generateConversationalFallback(userPrompt, conversationHistory, currentDiagram);
+      } else {
+        console.log('✅ AI correctly preserved existing entities');
+      }
     }
-    PATIENT ||--o{ APPOINTMENT : books
-    DOCTOR ||--o{ APPOINTMENT : conducts`;
+
+    // Final validation - if still invalid, use conversational fallback
+    const validation = validateDiagramStructure(diagramCode, format);
+    if (!validation.valid) {
+      console.log('⚠️ Invalid diagram structure, using conversational fallback');
+      diagramCode = generateConversationalFallback(userPrompt, conversationHistory, currentDiagram);
+    }
+
+    console.log('✅ Final diagram code length:', diagramCode.length);
+    
+    return {
+      diagramCode,
+      format,
+      source: 'groq_conversational',
+      message: 'Generated by Groq with conversation context',
+      provider: 'groq',
+      model: 'llama3-8b-8192'
+    };
+
+  } catch (error) {
+    console.error('❌ Diagram Generation Error:', error.message);
+    
+    // Always provide conversational fallback
+    const fallbackCode = generateConversationalFallback(userPrompt, conversationHistory, currentDiagram);
+    
+    return {
+      diagramCode: fallbackCode,
+      format,
+      source: 'conversational_fallback_on_error',
+      message: 'Generated using conversational fallback due to API error',
+      provider: 'template',
+      originalError: error.message
+    };
   }
-  
-  if (lower.includes('ecommerce') || lower.includes('shop') || lower.includes('store') || lower.includes('product')) {
-    return `erDiagram
-    USER {
-        int user_id PK
-        string username
-        string email
-        string password_hash
-        datetime created_at
-    }
-    PRODUCT {
-        int product_id PK
-        string name
-        text description
-        decimal price
-        int stock_quantity
-    }
-    ORDER {
-        int order_id PK
-        int user_id FK
-        datetime order_date
-        decimal total_amount
-        string status
-    }
-    ORDER_ITEM {
-        int order_item_id PK
-        int order_id FK
-        int product_id FK
-        int quantity
-        decimal unit_price
-    }
-    USER ||--o{ ORDER : places
-    ORDER ||--o{ ORDER_ITEM : contains
-    PRODUCT ||--o{ ORDER_ITEM : includes`;
-  }
-  
-  return `erDiagram
-    USER {
-        int id PK
-        string name
-        string email
-        datetime created_at
-    }
-    ITEM {
-        int id PK
-        string title
-        text description
-        int user_id FK
-        datetime created_at
-    }
-    USER ||--o{ ITEM : owns`;
 }
 
 module.exports = {
-  parseExistingDiagram,
-  findPotentialConnections,
-  determineRelationshipType,
-  determineRelationshipLabel,
-  generateNewTable,
+  generateDiagram,
+  createConversationalPrompt,
   generateConversationalFallback
 };
