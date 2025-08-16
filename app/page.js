@@ -35,7 +35,7 @@ export default function Home() {
 
   const checkBackendStatus = async () => {
     try {
-      const res = await fetch('http://localhost:3003/api/ping');
+      const res = await fetch('https://chartgeniebackend.onrender.com/api/ping');
       const data = await res.json();
       setBackendStatus('connected');
       console.log('✅ Backend connected:', data);
@@ -47,7 +47,7 @@ export default function Home() {
 
   const fetchSupportedFormats = async () => {
     try {
-      const res = await fetch('http://localhost:3003/api/formats');
+      const res = await fetch('https://chartgeniebackend.onrender.com/api/formats');
       const data = await res.json();
       setSupportedFormats(data);
     } catch (err) {
@@ -80,7 +80,7 @@ export default function Home() {
     setMessages((prev) => [...prev, loadingMessage]);
 
     try {
-      const res = await fetch('http://localhost:3003/api/diagram', {
+      const res = await fetch('https://chartgeniebackend.onrender.com/api/diagram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -150,7 +150,7 @@ export default function Home() {
   const clearConversation = async () => {
     try {
       if (sessionId) {
-        await fetch(`http://localhost:3003/api/conversation/${sessionId}`, { method: 'DELETE' });
+        await fetch(`https://chartgeniebackend.onrender.com/api/conversation/${sessionId}`, { method: 'DELETE' });
       }
       setMessages([]);
       setDiagram(null);
@@ -166,7 +166,7 @@ export default function Home() {
 
   const clearCache = async () => {
     try {
-      await fetch('http://localhost:3003/api/cache', { method: 'DELETE' });
+      await fetch('https://chartgeniebackend.onrender.com/api/cache', { method: 'DELETE' });
       setMessages((prev) => [...prev, {
         role: 'system',
         content: '🗑️ Backend cache cleared successfully'
