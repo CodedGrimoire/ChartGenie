@@ -1,422 +1,247 @@
-# ChartGenie 🎨
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
-**Conversational Diagram Generation with AI**
+## Getting Started
 
-ChartGenie is a full-stack application that transforms natural language descriptions into beautiful diagrams using AI. Simply describe what you want to visualize, and ChartGenie will generate Mermaid diagrams through conversational interactions.
+First, run the development server:
 
-![ChartGenie Demo](https://via.placeholder.com/800x400/1f2937/ffffff?text=ChartGenie+Demo)
-
-## ✨ Features
-
-### 🤖 AI-Powered Generation
-- **Natural Language Processing**: Describe diagrams in plain English
-- **Conversational Interface**: Iterative refinement through chat
-- **Multiple Diagram Types**: ER diagrams, flowcharts, sequence diagrams, class diagrams
-- **Smart Context Awareness**: Remembers previous diagrams in conversation
-
-### 🔄 Interactive Modifications
-- **Real-time Editing**: Modify existing diagrams conversationally
-- **Entity Preservation**: Intelligent validation to maintain diagram integrity
-- **Undo/Redo Support**: Track changes throughout the conversation
-- **Session Persistence**: Continue conversations across browser sessions
-
-### 🚀 Performance & Reliability
-- **Intelligent Caching**: Fast responses for similar requests
-- **Fallback Generation**: Template-based backups when AI is unavailable
-- **Error Recovery**: Graceful handling of API failures
-- **Session Management**: Automatic cleanup of old conversations
-
-### 🎨 Modern UI/UX
-- **Responsive Design**: Built with Next.js and Tailwind CSS
-- **Real-time Preview**: Live diagram rendering as you chat
-- **Dark/Light Mode**: Customizable theme preferences
-- **Export Options**: Download diagrams in multiple formats
-
-## 🏗️ Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend       │    │   AI Service    │
-│   (Next.js)     │◄──►│   (Express)     │◄──►│   (Groq API)    │
-│   + Tailwind    │    │   + NodeCache   │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## 🚀 Quick Start
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-### Prerequisites
+You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
-- Node.js 18+ 
-- npm or yarn
-- Groq API key (free at [console.groq.com](https://console.groq.com/keys))
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-### Installation
+## Learn More
 
-1. **Clone the repository**
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# ChartGenie Conversational Server
+
+A modular Node.js server for generating database diagrams using conversational AI (Groq API). The server maintains conversation context and can intelligently modify existing diagrams based on user requests.
+
+## 📁 Project Structure
+
+```
+├── server.js           # Main Express server and route handlers
+├── config.js           # Configuration constants and environment variables
+├── groqService.js      # Groq API integration and communication
+├── diagramGenerator.js # Core diagram generation logic and conversation handling
+├── templates.js        # Fallback diagram templates and patterns
+├── trimmer.js          # Diagram code cleaning and validation utilities
+├── utils.js            # General utility functions and helpers
+├── package.json        # Dependencies and project metadata
+└── README.md          # This file
+```
+
+## 🏗️ Module Breakdown
+
+### `config.js`
+- Environment variable management
+- Application constants (ports, timeouts, etc.)
+- Output format definitions
+- Groq API configuration
+
+### `groqService.js`
+- Groq API communication
+- Error handling for API calls
+- Connection testing utilities
+
+### `diagramGenerator.js`
+- Main diagram generation orchestration
+- Conversational prompt creation
+- Context-aware diagram modification
+- Fallback handling when AI fails
+
+### `templates.js`
+- Pre-built diagram templates (Hospital, E-commerce, Generic)
+- Entity field definitions by type
+- Relationship mapping rules
+- Template selection logic
+
+### `trimmer.js`
+- Raw AI response cleaning
+- Diagram code validation
+- Structure normalization
+- Duplicate removal
+
+### `utils.js`
+- Input validation
+- Entity extraction and parsing
+- Modification intent detection
+- Table name extraction
+- Relationship building utilities
+
+### `server.js`
+- Express app setup and middleware
+- Route definitions and handlers
+- Session management
+- Cache management
+- Graceful shutdown handling
+
+## 🚀 Setup and Installation
+
+1. **Clone and install dependencies:**
    ```bash
-   git clone https://github.com/yourusername/chartgenie.git
-   cd chartgenie
-   ```
-
-2. **Install backend dependencies**
-   ```bash
-   cd backend
    npm install
    ```
 
-3. **Install frontend dependencies**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
-4. **Configure environment variables**
-   
-   Create `backend/.env`:
+2. **Set up environment variables:**
+   Create a `.env` file in the root directory:
    ```env
    GROQ_API_KEY=your_groq_api_key_here
-   PORT=3001
-   NODE_ENV=development
+   PORT=3003
    ```
 
-5. **Start the development servers**
-   
-   Terminal 1 (Backend):
+3. **Get Groq API Key:**
+   - Visit [https://console.groq.com/keys](https://console.groq.com/keys)
+   - Sign up for free
+   - Create an API key
+   - Add it to your `.env` file
+
+4. **Start the server:**
    ```bash
-   cd backend
+   # Production
+   npm start
+   
+   # Development (with auto-reload)
    npm run dev
    ```
-   
-   Terminal 2 (Frontend):
-   ```bash
-   cd frontend
-   npm run dev
-   ```
 
-6. **Open your browser**
-   
-   Navigate to `http://localhost:3000`
+## 📡 API Endpoints
 
-## 🎯 Usage Examples
+### Health & Testing
+- `GET /api/ping` - Health check and server status
+- `GET /api/test-groq` - Test Groq API connection
 
-### Create a Database Schema
-```
-"Create an ER diagram for a blog system with users, posts, and comments"
-```
-
-### Generate a Process Flow
-```
-"Show me a flowchart for user authentication process"
-```
-
-### Modify Existing Diagrams
-```
-"Add a 'categories' table to the blog schema and connect it to posts"
-```
-
-### Create System Architecture
-```
-"Design a sequence diagram showing how a user logs in to the system"
-```
-
-## 🛠️ Project Structure
-
-```
-chartgenie/
-├── backend/                 # Express.js API server
-│   ├── server.js           # Main server file
-│   ├── config/             # Configuration files
-│   ├── utils/              # Utility functions
-│   ├── services/           # External service integrations
-│   └── package.json
-├── frontend/               # Next.js application
-│   ├── pages/              # Next.js pages
-│   ├── components/         # React components
-│   ├── styles/             # Tailwind CSS styles
-│   ├── hooks/              # Custom React hooks
-│   ├── utils/              # Frontend utilities
-│   └── package.json
-└── README.md
-```
-
-## 🔧 Configuration
-
-### Backend Configuration (`backend/config/index.js`)
-
-```javascript
-module.exports = {
-  OUTPUT_FORMATS: {
-    MERMAID: 'mermaid',
-    PLANTUML: 'plantuml',
-    TIKZ: 'tikz'
-  },
-  CONFIG: {
-    CACHE_TTL: 3600,           // Cache time-to-live (seconds)
-    MAX_HISTORY_LENGTH: 10,    // Max conversation history
-    GROQ_MODEL: 'mixtral-8x7b-32768'
+### Diagram Generation
+- `POST /api/diagram` - Generate or modify diagrams
+  ```json
+  {
+    "message": "Create an e-commerce database",
+    "format": "mermaid",
+    "sessionId": "optional-session-id",
+    "currentDiagram": "optional-existing-diagram"
   }
-};
-```
+  ```
 
-### Frontend Configuration (`frontend/next.config.js`)
+### Session Management
+- `GET /api/conversation/:sessionId` - Get conversation history
+- `DELETE /api/conversation/:sessionId` - Clear conversation
+- `GET /api/sessions` - List all active sessions
 
-```javascript
-module.exports = {
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:3001/api/:path*'
-      }
-    ];
-  }
-};
-```
+### System
+- `GET /api/formats` - List supported output formats
+- `DELETE /api/cache` - Clear server cache
 
-## 📡 API Reference
+## 🔄 Conversational Features
 
-### Core Endpoints
+### Context Awareness
+- Maintains conversation history per session
+- Understands modification requests ("add reviews table")
+- Preserves existing entities when modifying diagrams
 
-#### Generate Diagram
-```http
-POST /api/diagram
-Content-Type: application/json
+### Intelligent Modifications
+- Detects when user wants to modify vs. create new
+- Automatically creates relationships between new and existing entities
+- Validates that modifications preserve original structure
 
-{
-  "message": "Create a user registration flowchart",
-  "format": "mermaid",
-  "sessionId": "optional-session-id",
-  "currentDiagram": "optional-current-diagram"
-}
-```
+### Fallback System
+- Uses templates when AI fails
+- Smart table generation based on context
+- Preserves user intent even when API is unavailable
 
-#### Health Check
-```http
-GET /api/ping
-```
+## 🧪 Example Usage
 
-#### Session Management
-```http
-GET /api/session/:sessionId      # Get session details
-DELETE /api/session/:sessionId   # Delete session
-GET /api/sessions               # List all sessions
-```
-
-#### Cache Management
-```http
-GET /api/cache-stats            # View cache statistics
-POST /api/cache/clear           # Clear cache
-```
-
-## 🎨 Frontend Components
-
-### Key React Components
-
-- **`ChatInterface`** - Main conversational UI
-- **`DiagramViewer`** - Mermaid diagram renderer
-- **`SessionManager`** - Handle conversation sessions
-- **`ExportDialog`** - Diagram export functionality
-- **`ThemeToggle`** - Dark/light mode switcher
-
-### Tailwind Utilities
-
-The frontend uses Tailwind CSS for styling with custom configurations:
-
-```javascript
-// tailwind.config.js
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        primary: '#3b82f6',
-        secondary: '#8b5cf6'
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.5s ease-in-out'
-      }
-    }
-  }
-};
-```
-
-## 🔄 State Management
-
-### Backend Session State
-- **Conversation History**: Stored in-memory Map
-- **Current Diagram**: Maintained per session
-- **Cache Layer**: NodeCache for response caching
-
-### Frontend State
-- **React State**: Component-level state with hooks
-- **Session Storage**: Browser session persistence
-- **Context API**: Global theme and user preferences
-
-## 🚀 Deployment
-
-### Backend (Express.js)
-
-**Option 1: Railway**
+### Creating a New Diagram
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Deploy
-railway login
-railway init
-railway up
-```
-
-**Option 2: Heroku**
-```bash
-# Install Heroku CLI
-npm install -g heroku
-
-# Deploy
-heroku create chartgenie-api
-git push heroku main
-```
-
-### Frontend (Next.js)
-
-**Option 1: Vercel**
-```bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Deploy
-vercel --prod
-```
-
-**Option 2: Netlify**
-```bash
-# Build and deploy
-npm run build
-npm run export
-# Upload dist/ folder to Netlify
-```
-
-### Environment Variables for Production
-
-Backend:
-```env
-GROQ_API_KEY=your_production_groq_key
-PORT=3001
-NODE_ENV=production
-CORS_ORIGIN=https://your-frontend-domain.com
-```
-
-Frontend:
-```env
-NEXT_PUBLIC_API_URL=https://your-backend-domain.com
-```
-
-## 🧪 Testing
-
-### Backend Testing
-```bash
-cd backend
-npm test
-```
-
-### Frontend Testing
-```bash
-cd frontend
-npm test
-```
-
-### API Testing
-```bash
-# Test health endpoint
-curl http://localhost:3001/api/ping
-
-# Test diagram generation
-curl -X POST http://localhost:3001/api/diagram \
+curl -X POST http://localhost:3003/api/diagram \
   -H "Content-Type: application/json" \
-  -d '{"message": "Create a simple user entity", "format": "mermaid"}'
+  -d '{
+    "message": "Create a hospital management system",
+    "format": "mermaid"
+  }'
 ```
 
-## 🤝 Contributing
+### Modifying Existing Diagram
+```bash
+curl -X POST http://localhost:3003/api/diagram \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "add a pharmacy table",
+    "format": "mermaid",
+    "sessionId": "existing-session-id",
+    "currentDiagram": "erDiagram..."
+  }'
+```
 
-1. **Fork the repository**
-2. **Create a feature branch**
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
-3. **Commit your changes**
-   ```bash
-   git commit -m 'Add amazing feature'
-   ```
-4. **Push to the branch**
-   ```bash
-   git push origin feature/amazing-feature
-   ```
-5. **Open a Pull Request**
+## 🛠️ Development
 
-### Development Guidelines
+### Adding New Templates
+1. Add template to `templates.js`
+2. Update `getTemplateByKeywords()` function
+3. Add field definitions to `TABLE_TYPE_FIELDS`
 
-- Follow ESLint configuration
-- Use conventional commit messages
-- Add tests for new features
-- Update documentation
-- Ensure responsive design
+### Adding New Output Formats
+1. Add format to `OUTPUT_FORMATS` in `config.js`
+2. Update validation in `utils.js`
+3. Add cleaning logic in `trimmer.js`
 
-## 📄 License
+### Extending Utilities
+- Add new utility functions to `utils.js`
+- Update validation logic as needed
+- Add tests for new functionality
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 🔍 Debugging
 
-## 🙏 Acknowledgments
-
-- **Groq** - Fast AI inference
-- **Mermaid** - Diagram generation library
-- **Next.js** - React framework
-- **Tailwind CSS** - Utility-first CSS framework
-- **Express.js** - Node.js web framework
-
-## 🐛 Troubleshooting
+### Enable Detailed Logging
+The server includes extensive console logging:
+- `🔥` - Main operations
+- `✅` - Successful operations
+- `❌` - Errors
+- `⚠️` - Warnings
+- `🔍` - Analysis/validation
+- `📊` - Data processing
 
 ### Common Issues
+1. **Missing Groq API Key**: Check `.env` file configuration
+2. **Invalid Diagrams**: Check `trimmer.js` validation logic
+3. **Session Issues**: Monitor session cleanup in server logs
 
-**Issue**: "No Groq API key configured"
-**Solution**: Ensure `GROQ_API_KEY` is set in `backend/.env`
+## 📈 Performance Considerations
 
-**Issue**: Frontend can't connect to backend
-**Solution**: Check that backend is running on port 3001 and frontend proxy is configured
+- **Caching**: Results are cached with conversation context
+- **Session Cleanup**: Old sessions auto-cleanup after 24 hours
+- **Memory Management**: History limited to last 10 exchanges per session
+- **Context Size**: Only last 3 exchanges used for AI context
 
-**Issue**: Diagrams not rendering
-**Solution**: Verify Mermaid syntax is valid and check browser console for errors
+## 🔧 Configuration Options
 
-**Issue**: Sessions not persisting
-**Solution**: Check browser storage permissions and backend memory limits
+Modify `config.js` to adjust:
+- Cache TTL (time-to-live)
+- Maximum input length
+- Conversation history limits
+- Context history size
+- Groq API parameters
 
-### Debug Mode
+## 📝 License
 
-Enable debug logging:
-```bash
-# Backend
-DEBUG=chartgenie:* npm run dev
-
-# Frontend  
-NEXT_PUBLIC_DEBUG=true npm run dev
-```
-
-## 📊 Performance
-
-### Optimization Features
-
-- **Response Caching**: 3600s TTL for similar requests
-- **Session Cleanup**: Automatic removal of old sessions
-- **Code Splitting**: Next.js automatic optimization
-- **Image Optimization**: Next.js built-in image optimization
-- **Bundle Analysis**: Webpack bundle analyzer integration
-
-### Monitoring
-
-- Server health: `/api/ping`
-- Cache statistics: `/api/cache-stats`
-- Active sessions: `/api/sessions`
-
----
-
-**Happy Diagramming! 🎨**
-
-For questions or support, please [open an issue](https://github.com/yourusername/chartgenie/issues) or contact the maintainers.
+MIT License - feel free to use and modify as needed.
