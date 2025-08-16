@@ -13,6 +13,7 @@ export default function Home() {
   const [supportedFormats, setSupportedFormats] = useState({});
   const [backendStatus, setBackendStatus] = useState('checking');
   const [sessionId, setSessionId] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Ref for the messages container
   const messagesEndRef = useRef(null);
@@ -65,8 +66,9 @@ export default function Home() {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
+    setIsLoading(true);
     const userMessage = { role: 'user', content: input, format: outputFormat };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
@@ -74,7 +76,7 @@ export default function Home() {
     // Add loading message
     const loadingMessage = {
       role: 'system',
-      content: `🔄 Generating ${outputFormat} diagram...`,
+      content: `Generating ${outputFormat} diagram...`,
       loading: true
     };
     setMessages((prev) => [...prev, loadingMessage]);
@@ -103,7 +105,7 @@ export default function Home() {
       
       const systemMessage = {
         role: 'system',
-        content: `✅ ${data.format} diagram generated! (Source: ${data.source})`,
+        content: `${data.format} diagram generated successfully`,
         metadata: {
           source: data.source,
           format: data.format,
@@ -131,7 +133,7 @@ export default function Home() {
       
       const errorMessage = {
         role: 'system',
-        content: '❌ Failed to generate diagram. Check backend connection.',
+        content: 'Failed to generate diagram. Please check your connection and try again.',
         error: true
       };
       
@@ -144,6 +146,8 @@ export default function Home() {
         source: 'error',
         originalPrompt: input
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -157,7 +161,7 @@ export default function Home() {
       setSessionId(null);
       setMessages((prev) => [...prev, {
         role: 'system',
-        content: '🗑️ Conversation cleared. Starting fresh!'
+        content: 'Conversation cleared. Starting fresh!'
       }]);
     } catch (err) {
       console.error('❌ Failed to clear conversation:', err);
@@ -169,7 +173,7 @@ export default function Home() {
       await fetch('https://chartgeniebackend.onrender.com/api/cache', { method: 'DELETE' });
       setMessages((prev) => [...prev, {
         role: 'system',
-        content: '🗑️ Backend cache cleared successfully'
+        content: 'Backend cache cleared successfully'
       }]);
     } catch (err) {
       console.error('❌ Failed to clear cache:', err);
@@ -181,7 +185,7 @@ export default function Home() {
       navigator.clipboard.writeText(diagram.code);
       setMessages((prev) => [...prev, {
         role: 'system',
-        content: '📋 Diagram code copied to clipboard!'
+        content: 'Diagram code copied to clipboard!'
       }]);
     }
   };
@@ -205,170 +209,276 @@ export default function Home() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] h-screen overflow-hidden">
-      {/* Chat Sidebar */}
-      <aside className="bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-screen">
-        {/* Fixed Header Section */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-xl font-semibold mb-2">🧠 Chat with ChartGenie</h2>
-          
-          {/* Backend Status */}
-          <div className={`text-xs px-2 py-1 rounded mb-2 ${
-            backendStatus === 'connected' ? 'bg-green-100 text-green-800' :
-            backendStatus === 'disconnected' ? 'bg-red-100 text-red-800' :
-            'bg-yellow-100 text-yellow-800'
-          }`}>
-            Backend: {backendStatus}
-          </div>
-
-          {/* Session Info */}
-          {sessionId && (
-            <div className="text-xs px-2 py-1 rounded mb-2 bg-blue-100 text-blue-800">
-              Session: {sessionId.substring(0, 8)}...
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+      {/* Header */}
+      <header className="border-b border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                  ChartGenie
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">AI-Powered Database Diagrams</p>
+              </div>
             </div>
-          )}
-
-          {/* Format Selection */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Output Format:</label>
-            <select
-              value={outputFormat}
-              onChange={(e) => setOutputFormat(e.target.value)}
-              className="w-full p-2 rounded border dark:bg-zinc-800 dark:border-zinc-600 text-sm"
-            >
-              {Object.entries(supportedFormats.formats || {}).map(([key, value]) => (
-                <option key={key} value={value}>
-                  {value.toUpperCase()} - {key.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
+            
+            <div className="flex items-center space-x-4">
+              {/* Status Indicator */}
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  backendStatus === 'connected' ? 'bg-emerald-500' :
+                  backendStatus === 'disconnected' ? 'bg-red-500' :
+                  'bg-yellow-500 animate-pulse'
+                }`} />
+                <span className="text-sm text-slate-600 dark:text-slate-300 capitalize">
+                  {backendStatus}
+                </span>
+              </div>
+              
+              {/* Format Selector */}
+              <select
+                value={outputFormat}
+                onChange={(e) => setOutputFormat(e.target.value)}
+                className="px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {Object.entries(supportedFormats.formats || {}).map(([key, value]) => (
+                  <option key={key} value={value}>
+                    {value.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
+      </header>
 
-        {/* Scrollable Messages Section */}
-        <div 
-          ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto p-4 space-y-2 scroll-smooth"
-        >
-          {messages.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`rounded-lg p-2 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-blue-100 dark:bg-blue-800 text-black dark:text-white'
-                  : msg.error
-                  ? 'bg-red-100 dark:bg-red-800 text-black dark:text-white'
-                  : msg.loading
-                  ? 'bg-yellow-100 dark:bg-yellow-800 text-black dark:text-white'
-                  : 'bg-gray-200 dark:bg-zinc-700 text-black dark:text-white'
-              }`}
-            >
-              <div>{msg.content}</div>
-              {msg.format && (
-                <div className="text-xs opacity-75 mt-1">Format: {msg.format}</div>
-              )}
-              {msg.metadata && (
-                <div className="text-xs opacity-75 mt-1">
-                  {msg.metadata.message}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6 h-[calc(100vh-120px)]">
+          {/* Chat Sidebar */}
+          <aside className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-lg flex flex-col overflow-hidden">
+            {/* Chat Header */}
+            <div className="p-6 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                Conversation
+              </h2>
+              {sessionId && (
+                <div className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
+                  <span>Session:</span>
+                  <code className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-mono">
+                    {sessionId.substring(0, 8)}...
+                  </code>
                 </div>
               )}
             </div>
-          ))}
-          {/* Invisible element to scroll to */}
-          <div ref={messagesEndRef} />
-        </div>
 
-        {/* Fixed Input Section */}
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder={sessionId ? "Add tables, modify schema, or ask questions..." : "Describe your database schema..."}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-              className="flex-1 p-2 rounded border dark:bg-zinc-800 dark:border-zinc-600"
-              disabled={backendStatus !== 'connected'}
-            />
-            <button
-              onClick={handleSend}
-              disabled={backendStatus !== 'connected'}
-              className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 disabled:bg-gray-400"
+            {/* Messages */}
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto p-4 space-y-3"
             >
-              Send
-            </button>
-          </div>
-          
-          {/* Control Buttons */}
-          <div className="flex gap-2 text-xs">
-            <button
-              onClick={clearConversation}
-              className="px-2 py-1 bg-blue-200 dark:bg-blue-700 rounded hover:bg-blue-300"
-            >
-              New Chat
-            </button>
-            <button
-              onClick={clearCache}
-              className="px-2 py-1 bg-gray-200 dark:bg-zinc-700 rounded hover:bg-gray-300"
-            >
-              Clear Cache
-            </button>
-            <button
-              onClick={copyDiagramCode}
-              disabled={!diagram}
-              className="px-2 py-1 bg-gray-200 dark:bg-zinc-700 rounded hover:bg-gray-300 disabled:opacity-50"
-            >
-              Copy Code
-            </button>
-            <button
-              onClick={downloadDiagram}
-              disabled={!diagram}
-              className="px-2 py-1 bg-gray-200 dark:bg-zinc-700 rounded hover:bg-gray-300 disabled:opacity-50"
-            >
-              Download
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Preview Pane */}
-      <main className="p-8 overflow-y-auto bg-gray-50 dark:bg-zinc-800 text-black dark:text-white">
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold">📊 Diagram Preview</h1>
-          {diagram && (
-            <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              Format: {diagram.format} | Source: {diagram.source}
-              {diagram.sessionId && (
-                <span> | Session: {diagram.sessionId.substring(0, 8)}...</span>
+              {messages.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 mx-auto mb-4 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                    <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">
+                    Start a conversation about your database schema
+                  </p>
+                </div>
               )}
-              {diagram.originalPrompt && (
-                <span> | Last: "{diagram.originalPrompt}"</span>
-              )}
+              
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`rounded-lg p-3 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-blue-50 dark:bg-blue-900/20 text-slate-900 dark:text-white ml-8'
+                      : msg.error
+                      ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200'
+                      : msg.loading
+                      ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200'
+                      : 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 mr-8'
+                  }`}
+                >
+                  <div className="flex items-start space-x-2">
+                    {msg.role === 'user' ? (
+                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="w-6 h-6 bg-slate-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                          <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <div>{msg.content}</div>
+                      {msg.format && (
+                        <div className="text-xs opacity-75 mt-1">Format: {msg.format}</div>
+                      )}
+                      {msg.metadata && (
+                        <div className="text-xs opacity-75 mt-1">
+                          {msg.metadata.message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
             </div>
-          )}
-        </div>
 
-        <div className="w-full h-[80vh] rounded-lg border border-dashed border-zinc-400 dark:border-zinc-600 p-4">
-          {diagram ? (
-            <DiagramRenderer diagram={diagram} />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-zinc-500">
-                <p className="mb-2">Start a conversation about your database schema</p>
-                <p className="text-sm mb-4">
-                  Try: "I need a hospital database" → "Add a pharmacy table" → "Connect patients to pharmacies"
-                </p>
-                <p className="text-xs">
-                  💬 Conversational: Ask for modifications, additions, or completely new schemas
-                </p>
-                <p className="text-xs mt-1">
-                  🔧 Supports: Mermaid, TikZ/LaTeX, PGF, PlantUML
-                </p>
+            {/* Input Section */}
+            <div className="p-4 border-t border-slate-200/60 dark:border-slate-700/60 space-y-3">
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  placeholder={sessionId ? "Add tables, modify schema, or ask questions..." : "Describe your database schema..."}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                  className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                  disabled={backendStatus !== 'connected' || isLoading}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={backendStatus !== 'connected' || isLoading || !input.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium text-sm transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  {isLoading ? (
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={clearConversation}
+                  className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors"
+                >
+                  New Chat
+                </button>
+                <button
+                  onClick={clearCache}
+                  className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors"
+                >
+                  Clear Cache
+                </button>
+                <button
+                  onClick={copyDiagramCode}
+                  disabled={!diagram}
+                  className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors disabled:opacity-50"
+                >
+                  Copy Code
+                </button>
+                <button
+                  onClick={downloadDiagram}
+                  disabled={!diagram}
+                  className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors disabled:opacity-50"
+                >
+                  Download
+                </button>
               </div>
             </div>
-          )}
+          </aside>
+
+          {/* Diagram Preview */}
+          <main className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-lg overflow-hidden">
+            <div className="p-6 border-b border-slate-200/60 dark:border-slate-700/60">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                Diagram Preview
+              </h2>
+              {diagram && (
+                <div className="flex items-center space-x-4 text-sm text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center space-x-1">
+                    <span>Format:</span>
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-medium">
+                      {diagram.format.toUpperCase()}
+                    </span>
+                  </span>
+                  <span className="flex items-center space-x-1">
+                    <span>Source:</span>
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-medium">
+                      {diagram.source}
+                    </span>
+                  </span>
+                  {diagram.sessionId && (
+                    <span className="flex items-center space-x-1">
+                      <span>Session:</span>
+                      <code className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-mono">
+                        {diagram.sessionId.substring(0, 8)}...
+                      </code>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+                         <div className="p-6 h-[calc(100%-120px)] overflow-auto">
+               {diagram ? (
+                 <div className="min-h-full">
+                   <DiagramRenderer diagram={diagram} />
+                 </div>
+               ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-md">
+                    <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-full flex items-center justify-center">
+                      <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                      Ready to Create Diagrams
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-400 mb-4">
+                      Start by describing your database schema or requirements in the chat panel.
+                    </p>
+                    <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+                      <p className="flex items-center space-x-2">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                        <span>Try: "I need a hospital database"</span>
+                      </p>
+                      <p className="flex items-center space-x-2">
+                        <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                        <span>Then: "Add a pharmacy table"</span>
+                      </p>
+                      <p className="flex items-center space-x-2">
+                        <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                        <span>Finally: "Connect patients to pharmacies"</span>
+                      </p>
+                    </div>
+                    <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <strong>Supported Formats:</strong> Mermaid, TikZ/LaTeX, PGF, PlantUML
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
@@ -376,19 +486,35 @@ export default function Home() {
 // Universal Diagram Renderer Component
 function DiagramRenderer({ diagram }) {
   if (!diagram || !diagram.code) {
-    return <p className="text-red-500">No diagram code available</p>;
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-red-500">No diagram code available</p>
+      </div>
+    );
   }
 
   switch (diagram.format) {
     case 'mermaid':
-      return <MermaidRenderer code={diagram.code} />;
+      return (
+        <div className="w-full overflow-auto">
+          <MermaidRenderer code={diagram.code} />
+        </div>
+      );
     
     case 'tikz':
     case 'pgf':
-      return <LaTeXRenderer code={diagram.code} format={diagram.format} />;
+      return (
+        <div className="w-full overflow-auto">
+          <LaTeXRenderer code={diagram.code} format={diagram.format} />
+        </div>
+      );
     
     case 'plantuml':
-      return <PlantUMLRenderer code={diagram.code} />;
+      return (
+        <div className="w-full overflow-auto">
+          <PlantUMLRenderer code={diagram.code} />
+        </div>
+      );
     
     default:
       return <CodeRenderer code={diagram.code} format={diagram.format} />;
@@ -398,12 +524,20 @@ function DiagramRenderer({ diagram }) {
 // Code Renderer for unsupported formats
 function CodeRenderer({ code, format }) {
   return (
-    <div className="w-full h-full">
-      <div className="mb-2 text-sm font-medium">
-        {format.toUpperCase()} Code:
+    <div className="h-full">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-900 dark:text-white">
+          {format.toUpperCase()} Code
+        </h3>
+        <button
+          onClick={() => navigator.clipboard.writeText(code)}
+          className="px-3 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md transition-colors"
+        >
+          Copy
+        </button>
       </div>
-      <pre className="bg-gray-100 dark:bg-zinc-900 p-4 rounded overflow-auto h-full text-sm">
-        <code>{code}</code>
+      <pre className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg overflow-auto h-full text-sm border border-slate-200 dark:border-slate-700">
+        <code className="text-slate-800 dark:text-slate-200">{code}</code>
       </pre>
     </div>
   );
